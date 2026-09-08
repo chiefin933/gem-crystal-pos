@@ -185,3 +185,27 @@ export async function deleteCoupon(code: string) {
     method: 'DELETE',
   });
 }
+
+// ──────── POS Payment Notifications ───────────────────────────────────────
+
+/**
+ * Called by the POS terminal AFTER the cashier has seen and dismissed a
+ * payment alert. Only at this point does the backend mark the notification
+ * acknowledged so that it won't be re-delivered on the next poll.
+ * The call is fire-and-forget from the UI; a failure is safe because the
+ * backend will simply re-deliver the notification on the next poll cycle.
+ */
+export async function acknowledgePaymentNotification(
+  notificationId: string,
+  posSessionToken: string,
+): Promise<void> {
+  await fetch(`${API_BASE}/pos/payment-notifications/${encodeURIComponent(notificationId)}/acknowledge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${posSessionToken}`,
+    },
+  });
+  // We intentionally do not throw on failure — if the network is down the
+  // backend will re-deliver on the next poll and the cashier will dismiss again.
+}

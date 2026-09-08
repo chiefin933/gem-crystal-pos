@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchProducts } from '../../api/adminApi';
+import { acknowledgePaymentNotification } from '../../api/adminApi';
 import {
   Scan,
   Fingerprint,
@@ -501,7 +502,13 @@ export const PosTerminal: React.FC = () => {
                 <div className="flex justify-between"><span className="text-zinc-400">Amount received</span><strong className="text-white">{paymentAlerts[0].currency} {Number(paymentAlerts[0].amount).toLocaleString()}</strong></div>
                 <div className="flex justify-between"><span className="text-zinc-400">M-PESA receipt</span><strong className="font-mono text-emerald-300">{paymentAlerts[0].mpesaReceipt || 'Confirmed'}</strong></div>
               </div>
-              <button onClick={() => setPaymentAlerts(current => current.slice(1))} className="w-full rounded-xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-500">
+              <button onClick={() => {
+                // Tell the backend the cashier has seen and processed this alert.
+                // Fire-and-forget: if the call fails the notification re-appears
+                // on the next poll so the cashier will dismiss it again.
+                acknowledgePaymentNotification(paymentAlerts[0].id, posSessionToken || '');
+                setPaymentAlerts(current => current.slice(1));
+              }} className="w-full rounded-xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-500">
                 Acknowledge payment
               </button>
             </div>
