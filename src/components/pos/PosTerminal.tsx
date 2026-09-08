@@ -62,7 +62,7 @@ export const PosTerminal: React.FC = () => {
   const [discountPercent, setDiscountPercent] = useState<number>(0);
 
   // Payment & Checkout State
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MPESA' | 'CARD'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MPESA'>('CASH');
   const [cashReceived, setCashReceived] = useState<string>('');
   const [customerNameInput, setCustomerNameInput] = useState<string>('Walk-in Customer');
   const [customerPhoneInput, setCustomerPhoneInput] = useState<string>('');
@@ -685,7 +685,7 @@ export const PosTerminal: React.FC = () => {
               </div>
             </div>
 
-            {/* Payment Method Selector */}
+            {/* Payment Method Selector — CARD disabled until card terminal integrated */}
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => setPaymentMethod('CASH')}
@@ -711,13 +711,11 @@ export const PosTerminal: React.FC = () => {
                 <span>M-PESA</span>
               </button>
 
+              {/* CARD — disabled until physical card terminal integration is complete */}
               <button
-                onClick={() => setPaymentMethod('CARD')}
-                className={`py-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition ${
-                  paymentMethod === 'CARD'
-                    ? 'bg-rose-950 border-rose-600 text-rose-300'
-                    : 'bg-zinc-950 border-zinc-800 text-zinc-400'
-                }`}
+                disabled
+                title="Card terminal not yet integrated"
+                className="py-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 bg-zinc-950 border-zinc-800 text-zinc-600 cursor-not-allowed opacity-40"
               >
                 <CreditCard className="w-4 h-4" />
                 <span>CARD</span>
