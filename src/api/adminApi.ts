@@ -189,8 +189,8 @@ export async function deleteCoupon(code: string) {
 // ──────── POS Payment Notifications ───────────────────────────────────────
 
 /**
- * Called by the POS terminal AFTER the cashier has seen and dismissed a
- * payment alert. Only at this point does the backend mark the notification
+ * Called by the POS AFTER it has successfully displayed/processed a payment
+ * notification. Only at this point does the backend mark the notification
  * acknowledged so that it won't be re-delivered on the next poll.
  * The call is fire-and-forget from the UI; a failure is safe because the
  * backend will simply re-deliver the notification on the next poll cycle.
@@ -208,4 +208,21 @@ export async function acknowledgePaymentNotification(
   });
   // We intentionally do not throw on failure — if the network is down the
   // backend will re-deliver on the next poll and the cashier will dismiss again.
+}
+
+/**
+ * Ends the active POS session on the backend so the session token is
+ * immediately invalidated. Always call this from a try/finally so local
+ * state is cleared even if the network request fails.
+ */
+export async function posLogout(posSessionToken: string): Promise<void> {
+  await fetch(`${API_BASE}/pos/logout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${posSessionToken}`,
+    },
+  });
+  // Non-throwing: local cleanup in the caller's finally block handles the
+  // UI state regardless of whether the network request succeeds.
 }

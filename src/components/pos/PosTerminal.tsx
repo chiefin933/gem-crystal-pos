@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchProducts } from '../../api/adminApi';
-import { acknowledgePaymentNotification } from '../../api/adminApi';
+import { acknowledgePaymentNotification, posLogout } from '../../api/adminApi';
 import {
   Scan,
   Fingerprint,
@@ -464,12 +464,18 @@ export const PosTerminal: React.FC = () => {
             <span>ESC/POS Printer</span>
           </span>
           <button
-            onClick={() => {
+            onClick={async () => {
+              // Tell the backend to invalidate the session immediately.
+              // try/finally ensures local state is cleared even if offline.
+              try {
+                if (posSessionToken) await posLogout(posSessionToken);
+              } finally {
                 setIsAuthenticated(false);
                 setPosSessionToken(null);
                 setCart([]);
                 setStatusMsg('POS session locked.');
-              }}
+              }
+            }}
             className="bg-zinc-950 hover:bg-rose-950 text-zinc-400 hover:text-rose-300 border border-zinc-800 px-3 py-1.5 rounded-lg transition"
           >
             Lock Session
