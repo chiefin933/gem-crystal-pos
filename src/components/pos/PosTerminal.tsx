@@ -837,10 +837,6 @@ export const PosTerminal: React.FC = () => {
                   <span className="font-bold">Order Num :</span>
                   <span>{receipt.receiptNumber}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Tax Inv No  :</span>
-                  <span>{receipt.receiptNumber?.replace(/[^0-9]/g, '') || '8060'}</span>
-                </div>
                 <div className="flex justify-between font-bold">
                   <span>CUSTOMER    :</span>
                   <span>{(receipt.customerName || 'WALK-IN CUSTOMER').toUpperCase()}</span>
@@ -887,80 +883,46 @@ export const PosTerminal: React.FC = () => {
               {/* Payment Tender Summary */}
               <div className="space-y-1 text-[10px] border-b border-dashed border-black pb-2">
                 <div className="flex justify-between font-bold">
-                  <span>Tingg Pay</span>
+                  <span>{receipt.paymentMethod === 'MPESA' ? 'M-PESA' : receipt.paymentMethod === 'CASH' ? 'Cash' : receipt.paymentMethod}</span>
                   <span>-{receipt.total?.toLocaleString()}.00</span>
                 </div>
+                {receipt.paymentMethod === 'MPESA' && receipt.mpesaReceipt && (
+                  <div className="flex justify-between text-[9px] text-gray-700">
+                    <span>M-PESA Receipt:</span>
+                    <span className="font-mono">{receipt.mpesaReceipt}</span>
+                  </div>
+                )}
                 <div className="pt-1 text-[9px] space-y-0.5 text-gray-800">
                   <div className="flex justify-between">
-                    <span>Kshs{Math.round((receipt.total * 0.16 / 1.16) * 100) / 100} VAT (16%)</span>
+                    <span>VAT (16%): Kshs{(Math.round((receipt.total * 0.16 / 1.16) * 100) / 100).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Kshs0.00 Catering Levy</span>
-                  </div>
-                  <div className="flex justify-between font-semibold">
-                    <span>Kshs{Math.round((receipt.total / 1.16) * 100) / 100} Total Excl</span>
+                    <span>Total Excl VAT: Kshs{(Math.round((receipt.total / 1.16) * 100) / 100).toLocaleString()}</span>
                   </div>
                 </div>
               </div>
 
               {/* Payment Method Details */}
               <div className="text-center pt-1 pb-2 border-b border-dashed border-black">
-                <div className="text-[10px] font-bold mb-1">Mobile Payments</div>
+                <div className="text-[10px] font-bold mb-1">Payment</div>
                 <div className="flex justify-between text-[10px] font-bold">
-                  <span>{receipt.paymentMethod === 'MPESA' ? `cellulant(${receipt.mpesaReceipt || 'QGH8721X9'})` : receipt.paymentMethod}</span>
+                  <span>{receipt.paymentMethod === 'MPESA' ? 'M-PESA STK Push' : receipt.paymentMethod}</span>
                   <span>{receipt.total?.toLocaleString()}.00</span>
                 </div>
               </div>
 
-              {/* Realistic KRA eTIMS QR Code SVG */}
-              <div className="py-2 text-center flex flex-col items-center justify-center space-y-1">
-                <svg className="w-24 h-24 mx-auto" viewBox="0 0 100 100" fill="black">
-                  <rect x="0" y="0" width="100" height="100" fill="white" stroke="black" strokeWidth="2" />
-                  <rect x="6" y="6" width="24" height="24" fill="black" />
-                  <rect x="10" y="10" width="16" height="16" fill="white" />
-                  <rect x="14" y="14" width="8" height="8" fill="black" />
-                  <rect x="70" y="6" width="24" height="24" fill="black" />
-                  <rect x="74" y="10" width="16" height="16" fill="white" />
-                  <rect x="78" y="14" width="8" height="8" fill="black" />
-                  <rect x="6" y="70" width="24" height="24" fill="black" />
-                  <rect x="10" y="74" width="16" height="16" fill="white" />
-                  <rect x="14" y="78" width="8" height="8" fill="black" />
-                  <rect x="34" y="10" width="4" height="4" />
-                  <rect x="42" y="10" width="4" height="4" />
-                  <rect x="50" y="10" width="4" height="4" />
-                  <rect x="58" y="10" width="4" height="4" />
-                  <rect x="10" y="34" width="4" height="4" />
-                  <rect x="10" y="42" width="4" height="4" />
-                  <rect x="10" y="50" width="4" height="4" />
-                  <rect x="10" y="58" width="4" height="4" />
-                  <rect x="34" y="34" width="8" height="8" />
-                  <rect x="46" y="34" width="8" height="8" />
-                  <rect x="58" y="34" width="8" height="8" />
-                  <rect x="70" y="34" width="8" height="8" />
-                  <rect x="82" y="34" width="8" height="8" />
-                  <rect x="34" y="46" width="8" height="8" />
-                  <rect x="46" y="46" width="12" height="12" />
-                  <rect x="64" y="46" width="8" height="8" />
-                  <rect x="78" y="46" width="8" height="8" />
-                  <rect x="34" y="60" width="10" height="10" />
-                  <rect x="48" y="60" width="8" height="8" />
-                  <rect x="60" y="60" width="12" height="12" />
-                  <rect x="76" y="60" width="10" height="10" />
-                  <rect x="34" y="74" width="8" height="8" />
-                  <rect x="46" y="74" width="10" height="10" />
-                  <rect x="60" y="74" width="8" height="8" />
-                  <rect x="72" y="74" width="12" height="12" />
-                </svg>
-                <div className="text-[8px] font-mono tracking-tighter">
-                  M/w-No.:0020104080000762073<br />
-                  M/w-SN.:KRAMW002202111010408
+              {/* Tax Invoice — pending eTIMS integration */}
+              <div className="py-2 text-center flex flex-col items-center justify-center space-y-1 border-b border-dashed border-black">
+                <div className="text-[9px] font-mono text-gray-500 italic">
+                  Electronic Tax Invoice integration pending KRA eTIMS onboarding.<br />
+                  This receipt is a proof of purchase only.
                 </div>
               </div>
 
               {/* System Footer */}
               <div className="text-center pt-2 border-t border-black text-[8px] font-mono">
-                GAAP Point of Sale 1:6:1930<br />
-                <span className="font-bold">Thank you for shopping with us Gem & Crystal Fashion Hub</span>
+                <span className="font-bold">Thank you for shopping with us — Gem & Crystal Fashion Hub</span><br />
+                Roysambu, Nairobi, Kenya
               </div>
             </div>
 
