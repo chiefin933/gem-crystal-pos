@@ -73,6 +73,8 @@ export const PosTerminal: React.FC = () => {
 
   // Hardware Scanner Buffer State
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
+  // Till number for C2B payments — fetched from the backend on mount
+  const [tillNumber, setTillNumber] = useState<string | null>(null);
 
   const loadCatalog = async () => {
     try {
@@ -85,6 +87,11 @@ export const PosTerminal: React.FC = () => {
 
   useEffect(() => {
     loadCatalog();
+    // Load Till number for display in M-PESA payment instructions
+    fetch('/api/orders/till-number')
+      .then(r => r.json())
+      .then(d => { if (d.tillNumber) setTillNumber(d.tillNumber); })
+      .catch(() => {});
   }, []);
 
   // Global Barcode Scanner Listener (HID Device Keyboard Buffer)
@@ -316,10 +323,9 @@ export const PosTerminal: React.FC = () => {
       alert(`Cash received (KES ${numCashReceived}) is less than total amount (KES ${cartTotal})!`);
       return;
     }
-    if (paymentMethod === 'MPESA' && !customerPhoneInput.trim()) {
-      alert('Enter the customer M-PESA phone number to send the payment prompt.');
-      return;
-    }
+    // For C2B Till payments the customer pays independently —
+    // we do NOT need their phone number to initiate payment.
+    // Phone is optional (used for customer record and receipt only).
 
     setIsProcessing(true);
     try {
@@ -342,11 +348,7 @@ export const PosTerminal: React.FC = () => {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'POS checkout failed');
-
-      if (paymentMethod === 'MPESA' && !data.paymentInitiated) {
-        throw new Error('M-PESA prompt could not be sent. The sale is pending—do not take payment again. Ask the owner to review it.');
-      }
+      if (!res.ok) throw new Error(data.error?.message || data.error || 'POS checkout failed');
 
       setReceipt(data.sale);
       setCart([]);
@@ -355,9 +357,9 @@ export const PosTerminal: React.FC = () => {
       setCustomerPhoneInput('');
       setDiscountPercent(0);
       if (paymentMethod === 'MPESA') {
-        setStatusMsg('M-PESA prompt sent. The POS will show a verified payment popup once the backend confirms it.');
+        setStatusMsg(`Sale pending — receipt #${data.receiptNumber}. Waiting for customer's Till payment confirmation.`);
       }
-      await loadCatalog(); // Refresh catalog stock immediately
+      await loadCatalog();
     } catch (err: any) {
       alert(err.message || 'Checkout failed');
     } finally {
@@ -750,9 +752,19 @@ export const PosTerminal: React.FC = () => {
                 />
               </div>
               {paymentMethod === 'MPESA' && (
-                <p className="rounded-xl border border-emerald-800 bg-emerald-950/30 px-3 py-2 text-[11px] text-emerald-200">
-                  Enter the customer&apos;s M-PESA number above. The system sends the prompt and waits for the verified backend confirmation—do not enter a receipt manually.
-                </p>
+                <div className="rounded-xl border border-emerald-800 bg-emerald-950/30 px-3 py-2.5 text-[11px] text-emerald-200 space-y-1">
+                  <p className="font-bold text-emerald-300">Customer pays via M-PESA (Lipa na M-PESA → Buy Goods)</p>
+                  {tillNumber ? (
+                    <p>Till Number: <span className="font-mono font-black text-white text-sm">{tillNumber}</span></p>
+                  ) : (
+                    <p className="text-amber-300">Till number not configured — contact the owner.</p>
+                  )}
+                  <p className="text-emerald-400">Amount: <span className="font-mono font-bold">KES {cartTotal.toLocaleString()}</span></p>
+                  <p className="text-zinc-400 text-[10px]">
+                    Reference (optional): tell the customer to enter the receipt number shown after checkout.
+                    The system will automatically match the payment when Safaricom notifies us.
+                  </p>
+                </div>
               )}
             </div>
 
@@ -778,7 +790,7 @@ export const PosTerminal: React.FC = () => {
               onClick={handleCheckout}
               className="w-full py-3.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-rose-600/30 transition disabled:opacity-40"
             >
-              {isProcessing ? 'Processing Transaction...' : paymentMethod === 'MPESA' ? `Send M-PESA Prompt (KES ${cartTotal.toLocaleString()})` : `Complete Sale (KES ${cartTotal.toLocaleString()})`}
+              {isProcessing ? 'Processing Transaction...' : paymentMethod === 'MPESA' ? `Create Pending Sale (KES ${cartTotal.toLocaleString()})` : `Complete Sale (KES ${cartTotal.toLocaleString()})`}
             </button>
           </div>
         </div>
