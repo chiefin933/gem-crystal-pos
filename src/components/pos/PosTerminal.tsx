@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchProducts } from '../../api/adminApi';
-import { acknowledgePaymentNotification, posLogout } from '../../api/adminApi';
+import { acknowledgePaymentNotification, posLogout, completePOSSale, API_BASE } from '../../api/adminApi';
 import {
   Scan,
   Fingerprint,
@@ -33,6 +33,7 @@ interface PosCartItem {
 
 interface PaymentAlert {
   id: string;
+  posSaleId: string;
   orderNumber: string;
   customerName: string;
   amount: number;
@@ -88,7 +89,7 @@ export const PosTerminal: React.FC = () => {
   useEffect(() => {
     loadCatalog();
     // Load Till number for display in M-PESA payment instructions
-    fetch('/api/orders/till-number')
+    fetch(`${API_BASE}/orders/till-number`)
       .then(r => r.json())
       .then(d => { if (d.tillNumber) setTillNumber(d.tillNumber); })
       .catch(() => {});
@@ -146,7 +147,7 @@ export const PosTerminal: React.FC = () => {
     }
 
     try {
-      const res = await fetch('/api/pos/auth-request', {
+      const res = await fetch(`${API_BASE}/pos/auth-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -185,7 +186,7 @@ export const PosTerminal: React.FC = () => {
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await fetch(`/api/pos/auth-status/${encodeURIComponent(authRequestId)}`, {
+        const res = await fetch(`${API_BASE}/pos/auth-status/${encodeURIComponent(authRequestId)}`, {
           headers: { 'X-POS-Poll-Token': pollToken },
         });
         const data = await res.json();
@@ -237,7 +238,7 @@ export const PosTerminal: React.FC = () => {
     let cancelled = false;
     const pollPayments = async () => {
       try {
-        const response = await fetch('/api/pos/payment-notifications', {
+        const response = await fetch(`${API_BASE}/pos/payment-notifications`, {
           headers: { Authorization: `Bearer ${posSessionToken}` },
         });
         if (!response.ok) return;
@@ -329,7 +330,7 @@ export const PosTerminal: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const res = await fetch('/api/pos/checkout', {
+      const res = await fetch(`${API_BASE}/pos/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -350,14 +351,19 @@ export const PosTerminal: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || data.error || 'POS checkout failed');
 
-      setReceipt(data.sale);
+      // CASH: completeSaleAtomically is called server-side — show receipt immediately
+      // MPESA: sale is OPEN+PENDING — do NOT show receipt yet. Wait for M-PESA
+      //        confirmation notification, then cashier completes the sale.
+      if (paymentMethod === 'CASH') {
+        setReceipt(data.sale);
+      }
       setCart([]);
       setCashReceived('');
       setCustomerNameInput('Walk-in Customer');
       setCustomerPhoneInput('');
       setDiscountPercent(0);
       if (paymentMethod === 'MPESA') {
-        setStatusMsg(`Sale pending — receipt #${data.receiptNumber}. Waiting for customer's Till payment confirmation.`);
+        setStatusMsg(`Sale #${data.receiptNumber} pending. Ask customer to pay exactly KES ${Math.round(data.sale?.total ?? 0).toLocaleString()} to the Till using Buy Goods; no reference number is needed. A payment confirmation will appear here when Safaricom notifies us.`);
       }
       await loadCatalog();
     } catch (err: any) {
@@ -510,14 +516,22 @@ export const PosTerminal: React.FC = () => {
                 <div className="flex justify-between"><span className="text-zinc-400">Amount received</span><strong className="text-white">{paymentAlerts[0].currency} {Number(paymentAlerts[0].amount).toLocaleString()}</strong></div>
                 <div className="flex justify-between"><span className="text-zinc-400">M-PESA receipt</span><strong className="font-mono text-emerald-300">{paymentAlerts[0].mpesaReceipt || 'Confirmed'}</strong></div>
               </div>
-              <button onClick={() => {
-                // Tell the backend the cashier has seen and processed this alert.
-                // Fire-and-forget: if the call fails the notification re-appears
-                // on the next poll so the cashier will dismiss it again.
-                acknowledgePaymentNotification(paymentAlerts[0].id, posSessionToken || '');
-                setPaymentAlerts(current => current.slice(1));
+              <button onClick={async () => {
+                const alert = paymentAlerts[0];
+                try {
+                  // Completing first preserves the notification if stock deduction fails.
+                  const result = await completePOSSale(alert.posSaleId, posSessionToken || '');
+                  if (!result.success) throw new Error('Failed to complete sale');
+                  await acknowledgePaymentNotification(alert.id, posSessionToken || '');
+                  setPaymentAlerts(current => current.slice(1));
+                  setReceipt(result.sale);
+                  setStatusMsg(`Sale #${alert.orderNumber} completed — receipt ready.`);
+                  setTimeout(() => setStatusMsg(null), 4000);
+                } catch (err: any) {
+                  setStatusMsg(err.message || 'Payment confirmed, but sale completion failed. The payment alert will remain for retry.');
+                }
               }} className="w-full rounded-xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-500">
-                Acknowledge payment
+                ✅ Confirm Customer &amp; Complete Sale
               </button>
             </div>
           </div>
@@ -730,7 +744,8 @@ export const PosTerminal: React.FC = () => {
               </button>
             </div>
 
-            {/* Customer Information Inputs */}
+            {/* Cash sales may record customer details; Till payments use Safaricom's payer details. */}
+            {paymentMethod === 'CASH' && (
             <div className="space-y-2 pt-2 border-t border-zinc-800">
               <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
                 Customer Details
@@ -751,7 +766,9 @@ export const PosTerminal: React.FC = () => {
                   className="bg-zinc-950 border border-zinc-800 focus:border-rose-500 rounded-xl py-2 px-3 text-xs text-white placeholder-zinc-500 focus:outline-none"
                 />
               </div>
-              {paymentMethod === 'MPESA' && (
+              </div>
+            )}
+            {paymentMethod === 'MPESA' && (
                 <div className="rounded-xl border border-emerald-800 bg-emerald-950/30 px-3 py-2.5 text-[11px] text-emerald-200 space-y-1">
                   <p className="font-bold text-emerald-300">Customer pays via M-PESA (Lipa na M-PESA → Buy Goods)</p>
                   {tillNumber ? (
@@ -761,12 +778,11 @@ export const PosTerminal: React.FC = () => {
                   )}
                   <p className="text-emerald-400">Amount: <span className="font-mono font-bold">KES {cartTotal.toLocaleString()}</span></p>
                   <p className="text-zinc-400 text-[10px]">
-                    Reference (optional): tell the customer to enter the receipt number shown after checkout.
-                    The system will automatically match the payment when Safaricom notifies us.
+                    The customer enters the Till number and exact amount only; Buy Goods has no reference field. The cashier will then verify the Safaricom payer name before completing the sale.
+                    If two pending sales have the same amount, the payment is held for safe owner review instead of being assigned to the wrong sale.
                   </p>
                 </div>
               )}
-            </div>
 
             {/* Cash Received Input */}
             {paymentMethod === 'CASH' && (
@@ -918,7 +934,7 @@ export const PosTerminal: React.FC = () => {
               <div className="text-center pt-1 pb-2 border-b border-dashed border-black">
                 <div className="text-[10px] font-bold mb-1">Payment</div>
                 <div className="flex justify-between text-[10px] font-bold">
-                  <span>{receipt.paymentMethod === 'MPESA' ? 'M-PESA STK Push' : receipt.paymentMethod}</span>
+                  <span>{receipt.paymentMethod === 'MPESA' ? 'M-PESA Till Payment' : receipt.paymentMethod}</span>
                   <span>{receipt.total?.toLocaleString()}.00</span>
                 </div>
               </div>
