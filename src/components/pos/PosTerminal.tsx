@@ -891,12 +891,21 @@ export const PosTerminal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Items Table */}
-              <div className="space-y-1 py-1 border-b border-black">
+              {/* Items Table — names wrap; price and amount stay aligned for 80mm paper. */}
+              <div className="py-1 border-b border-black">
+                <div className="grid grid-cols-[minmax(0,1fr)_52px_62px] gap-x-1 border-b border-dashed border-black pb-1 mb-1 text-[9px] font-black uppercase">
+                  <span>Item</span>
+                  <span className="text-right">Price</span>
+                  <span className="text-right">Amount</span>
+                </div>
                 {receipt.items?.map((item: any, i: number) => (
-                  <div key={i} className="flex justify-between text-[10px]">
-                    <span className="truncate max-w-[190px]">{item.quantity} {item.title} ({item.size})</span>
-                    <span className="font-semibold">Kshs{(item.price * item.quantity).toLocaleString()}.00</span>
+                  <div key={i} className="grid grid-cols-[minmax(0,1fr)_52px_62px] gap-x-1 py-0.5 text-[9px] leading-snug">
+                    <div className="min-w-0 break-words pr-1">
+                      <span className="font-semibold">{item.quantity}× {item.title}</span>
+                      <span className="block text-[8px] text-gray-700">{item.size}{item.color ? ` · ${item.color}` : ''}</span>
+                    </div>
+                    <span className="text-right whitespace-nowrap">{Number(item.price || 0).toLocaleString()}</span>
+                    <span className="text-right font-semibold whitespace-nowrap">{Number((item.price || 0) * (item.quantity || 0)).toLocaleString()}</span>
                   </div>
                 ))}
               </div>
