@@ -339,14 +339,12 @@ export const PosTerminal: React.FC = () => {
           Authorization: `Bearer ${posSessionToken || ''}`,
         },
         body: JSON.stringify({
-          cashierName,
           customerName: customerNameInput.trim() || 'Walk-in Customer',
           customerPhone: customerPhoneInput.trim() || null,
-          items: cart,
+          items: cart.map(({ variantId, quantity }) => ({ variantId, quantity })),
           discountPercent,
           paymentMethod,
           cashReceived: paymentMethod === 'CASH' ? numCashReceived : null,
-          changeGiven: paymentMethod === 'CASH' ? changeGiven : null,
         }),
       });
 
