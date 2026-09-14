@@ -71,6 +71,8 @@ export const PosTerminal: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [paymentAlerts, setPaymentAlerts] = useState<PaymentAlert[]>([]);
+  const [isCompletingPayment, setIsCompletingPayment] = useState(false);
+  const [paymentCompletionError, setPaymentCompletionError] = useState<string | null>(null);
 
   // Hardware Scanner Buffer State
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
@@ -516,7 +518,15 @@ export const PosTerminal: React.FC = () => {
                 <div className="flex justify-between"><span className="text-zinc-400">Amount received</span><strong className="text-white">{paymentAlerts[0].currency} {Number(paymentAlerts[0].amount).toLocaleString()}</strong></div>
                 <div className="flex justify-between"><span className="text-zinc-400">M-PESA receipt</span><strong className="font-mono text-emerald-300">{paymentAlerts[0].mpesaReceipt || 'Confirmed'}</strong></div>
               </div>
+              {paymentCompletionError && (
+                <p role="alert" className="rounded-xl border border-rose-500/60 bg-rose-950/60 p-3 text-xs font-semibold text-rose-100">
+                  {paymentCompletionError}
+                </p>
+              )}
               <button onClick={async () => {
+                if (isCompletingPayment) return;
+                setPaymentCompletionError(null);
+                setIsCompletingPayment(true);
                 const alert = paymentAlerts[0];
                 try {
                   // Completing first preserves the notification if stock deduction fails.
@@ -528,10 +538,15 @@ export const PosTerminal: React.FC = () => {
                   setStatusMsg(`Sale #${alert.orderNumber} completed — receipt ready.`);
                   setTimeout(() => setStatusMsg(null), 4000);
                 } catch (err: any) {
-                  setStatusMsg(err.message || 'Payment confirmed, but sale completion failed. The payment alert will remain for retry.');
+                  const message = err.message || 'Payment confirmed, but sale completion failed. The payment alert will remain for retry.';
+                  setPaymentCompletionError(message);
+                  setStatusMsg(message);
+                } finally {
+                  setIsCompletingPayment(false);
                 }
-              }} className="w-full rounded-xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-500">
-                ✅ Confirm Customer &amp; Complete Sale
+              }} disabled={isCompletingPayment} className={`w-full rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white transition ${isCompletingPayment ? 'cursor-wait bg-emerald-800 opacity-75' : 'bg-emerald-600 hover:bg-emerald-500'}`}>
+                {isCompletingPayment ? 'Completing sale…' : '✅ Confirm Customer & Complete Sale'}
+
               </button>
             </div>
           </div>
