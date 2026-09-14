@@ -513,11 +513,27 @@ export const PosTerminal: React.FC = () => {
               </div>
             </div>
             <div className="space-y-4 p-6 text-sm">
-              <p className="text-zinc-300"><strong className="text-white">{paymentAlerts[0].customerName}</strong> has completed payment for <strong className="font-mono text-emerald-300">#{paymentAlerts[0].orderNumber}</strong>.</p>
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 space-y-2">
-                <div className="flex justify-between"><span className="text-zinc-400">Amount received</span><strong className="text-white">{paymentAlerts[0].currency} {Number(paymentAlerts[0].amount).toLocaleString()}</strong></div>
-                <div className="flex justify-between"><span className="text-zinc-400">M-PESA receipt</span><strong className="font-mono text-emerald-300">{paymentAlerts[0].mpesaReceipt || 'Confirmed'}</strong></div>
+              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-3">
+                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">Sale / receipt</span>
+                <strong className="font-mono text-sm text-emerald-300">#{paymentAlerts[0].orderNumber}</strong>
               </div>
+              <section aria-label="Verified payment details" className="rounded-2xl border border-emerald-900/70 bg-emerald-950/20 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-400">Payment details</p>
+                <dl className="mt-3 space-y-3">
+                  <div className="border-b border-emerald-900/70 pb-3">
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400">Customer name</dt>
+                    <dd className="mt-1 text-base font-black text-white">{paymentAlerts[0].customerName}</dd>
+                  </div>
+                  <div className="border-b border-emerald-900/70 pb-3">
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400">Amount received</dt>
+                    <dd className="mt-1 text-base font-black tabular-nums text-white">{paymentAlerts[0].currency} {Number(paymentAlerts[0].amount).toLocaleString()}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400">M-PESA reference number</dt>
+                    <dd className="mt-1 break-all font-mono text-base font-black tracking-wide text-emerald-300">{paymentAlerts[0].mpesaReceipt || 'Confirmed'}</dd>
+                  </div>
+                </dl>
+              </section>
               {paymentCompletionError && (
                 <p role="alert" className="rounded-xl border border-rose-500/60 bg-rose-950/60 p-3 text-xs font-semibold text-rose-100">
                   {paymentCompletionError}
