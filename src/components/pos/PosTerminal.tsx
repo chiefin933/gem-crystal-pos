@@ -245,6 +245,15 @@ export const PosTerminal: React.FC = () => {
         const response = await fetch(`${API_BASE}/pos/payment-notifications`, {
           headers: { Authorization: `Bearer ${posSessionToken}` },
         });
+        if (response.status === 401) {
+          setIsAuthenticated(false);
+          setPosSessionToken(null);
+          setCart([]);
+          setReceipt(null);
+          setPaymentAlerts([]);
+          setStatusMsg('POS shift has ended. Please sign in again.');
+          return;
+        }
         if (!response.ok) return;
         const data = await response.json();
         const incoming = Array.isArray(data.notifications) ? data.notifications as PaymentAlert[] : [];
