@@ -1,6 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchProducts } from '../../api/adminApi';
 import { acknowledgePaymentNotification, posLogout, completePOSSale, API_BASE } from '../../api/adminApi';
+import {
+  createOfflineReceiptNumber,
+  listOfflineCashSales,
+  markOfflineCashSaleForReview,
+  queueOfflineCashSale,
+  readCachedCatalog,
+  removeOfflineCashSale,
+  saveCachedCatalog,
+  type OfflineCashSale,
+} from '../../offline/posOfflineQueue';
 import {
   Scan,
   Fingerprint,
@@ -75,6 +85,9 @@ export const PosTerminal: React.FC = () => {
   const [paymentAlerts, setPaymentAlerts] = useState<PaymentAlert[]>([]);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [paymentCompletionError, setPaymentCompletionError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [queuedCashSales, setQueuedCashSales] = useState<OfflineCashSale[]>([]);
+  const syncInProgress = useRef(false);
 
   // Hardware Scanner Buffer State
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
@@ -85,10 +98,106 @@ export const PosTerminal: React.FC = () => {
     try {
       const data = await fetchProducts();
       setProducts(data);
+      await saveCachedCatalog(data);
     } catch (err) {
-      console.error(err);
+      const cachedProducts = await readCachedCatalog().catch(() => null);
+      if (cachedProducts) {
+        setProducts(cachedProducts);
+        setStatusMsg('Using the last securely cached catalogue. Stock and prices will be rechecked when online.');
+      } else {
+        console.error(err);
+      }
     }
   };
+
+  const refreshOfflineQueue = async () => {
+    setQueuedCashSales(await listOfflineCashSales());
+  };
+
+  const submitQueuedCashSale = async (sale: OfflineCashSale, sessionToken: string) => {
+    const response = await fetch(`${API_BASE}/pos/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionToken}`,
+      },
+      body: JSON.stringify({
+        customerName: sale.customerName,
+        customerPhone: sale.customerPhone,
+        items: sale.items,
+        discountPercent: sale.discountPercent,
+        paymentMethod: 'CASH',
+        cashReceived: sale.cashReceived,
+        offlineReceiptId: sale.receiptNumber,
+        offlineExpectedTotal: sale.expectedTotal,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  };
+
+  const syncOfflineCashSales = async (sessionToken: string) => {
+    if (syncInProgress.current || !navigator.onLine) return;
+    syncInProgress.current = true;
+    try {
+      const pendingSales = (await listOfflineCashSales()).filter(sale => sale.status === 'QUEUED');
+      let syncedCount = 0;
+      let needsReviewCount = 0;
+      for (const sale of pendingSales) {
+        try {
+          const { response, data } = await submitQueuedCashSale(sale, sessionToken);
+          if (response.ok) {
+            await removeOfflineCashSale(sale.receiptNumber);
+            syncedCount += 1;
+            continue;
+          }
+          const message = data.error?.message || data.error || 'Unable to validate the queued cash sale';
+          if (response.status === 400 || response.status === 409) {
+            await markOfflineCashSaleForReview(sale, message);
+            needsReviewCount += 1;
+            continue;
+          }
+          if (response.status === 401) {
+            setStatusMsg('POS shift has ended. Please sign in again before offline cash sales can sync.');
+          }
+          break;
+        } catch {
+          break;
+        }
+      }
+      await refreshOfflineQueue();
+      if (syncedCount || needsReviewCount) {
+        const parts = [];
+        if (syncedCount) parts.push(`${syncedCount} offline cash sale${syncedCount === 1 ? '' : 's'} securely synced.`);
+        if (needsReviewCount) parts.push(`${needsReviewCount} need${needsReviewCount === 1 ? 's' : ''} owner review.`);
+        setStatusMsg(parts.join(' '));
+        void loadCatalog();
+      }
+    } finally {
+      syncInProgress.current = false;
+    }
+  };
+
+  useEffect(() => {
+    void refreshOfflineQueue();
+    const wentOnline = () => setIsOnline(true);
+    const wentOffline = () => {
+      setIsOnline(false);
+      setPaymentMethod(current => current === 'MPESA' ? 'CASH' : current);
+    };
+    window.addEventListener('online', wentOnline);
+    window.addEventListener('offline', wentOffline);
+    return () => {
+      window.removeEventListener('online', wentOnline);
+      window.removeEventListener('offline', wentOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && posSessionToken && isOnline) {
+      void syncOfflineCashSales(posSessionToken);
+    }
+  }, [isAuthenticated, posSessionToken, isOnline]);
 
   useEffect(() => {
     loadCatalog();
@@ -364,15 +473,54 @@ export const PosTerminal: React.FC = () => {
   const numCashReceived = parseFloat(cashReceived) || 0;
   const changeGiven = paymentMethod === 'CASH' ? Math.max(0, numCashReceived - cartTotal) : 0;
 
+
+  const resetCheckoutForm = () => {
+    setCart([]);
+    setCashReceived('');
+    setCustomerNameInput('Walk-in Customer');
+    setCustomerPhoneInput('');
+    setDiscountPercent(0);
+  };
+
+  const queueCashSale = async (receiptNumber: string) => {
+    await queueOfflineCashSale({
+      receiptNumber,
+      // Keep personal contact details out of the offline tablet queue.
+      customerName: 'Walk-in Customer',
+      customerPhone: null,
+      items: cart.map(({ variantId, quantity }) => ({ variantId, quantity })),
+      discountPercent,
+      cashReceived: numCashReceived,
+      expectedTotal: cartTotal,
+      queuedAt: new Date().toISOString(),
+      status: 'QUEUED',
+    });
+    await refreshOfflineQueue();
+    resetCheckoutForm();
+    setStatusMsg(`Cash sale ${receiptNumber} is safely queued. It is not a completed sale or included in totals until the server validates it online.`);
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     if (paymentMethod === 'CASH' && numCashReceived < cartTotal) {
       alert(`Cash received (KES ${numCashReceived}) is less than total amount (KES ${cartTotal})!`);
       return;
     }
-    // For C2B Till payments the customer pays independently —
-    // we do NOT need their phone number to initiate payment.
-    // Phone is optional (used for customer record and receipt only).
+    if (paymentMethod === 'MPESA' && !isOnline) {
+      alert('M-PESA requires an online POS connection. Reconnect before creating a pending M-PESA sale.');
+      return;
+    }
+
+    const offlineReceiptId = paymentMethod === 'CASH' ? createOfflineReceiptNumber() : undefined;
+    if (paymentMethod === 'CASH' && !isOnline) {
+      try {
+        await queueCashSale(offlineReceiptId!);
+      } catch (error) {
+        alert('This tablet could not save the offline cash sale. Do not hand over the goods until it is online.');
+        console.error(error);
+      }
+      return;
+    }
 
     setIsProcessing(true);
     try {
@@ -389,34 +537,39 @@ export const PosTerminal: React.FC = () => {
           discountPercent,
           paymentMethod,
           cashReceived: paymentMethod === 'CASH' ? numCashReceived : null,
+          offlineReceiptId,
+          offlineExpectedTotal: paymentMethod === 'CASH' ? cartTotal : undefined,
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error?.message || data.error || 'POS checkout failed');
 
-      // CASH: completeSaleAtomically is called server-side — show receipt immediately
-      // MPESA: sale is OPEN+PENDING — do NOT show receipt yet. Wait for M-PESA
-      //        confirmation notification, then cashier completes the sale.
       if (paymentMethod === 'CASH') {
         setReceipt(data.sale);
       }
-      setCart([]);
-      setCashReceived('');
-      setCustomerNameInput('Walk-in Customer');
-      setCustomerPhoneInput('');
-      setDiscountPercent(0);
+      resetCheckoutForm();
       if (paymentMethod === 'MPESA') {
         setStatusMsg(`Sale #${data.receiptNumber} pending. Ask customer to pay exactly KES ${Math.round(data.sale?.total ?? 0).toLocaleString()} to the Till using Buy Goods; no reference number is needed. A payment confirmation will appear here when Safaricom notifies us.`);
       }
       await loadCatalog();
     } catch (err: any) {
-      alert(err.message || 'Checkout failed');
+      // A response may have been lost after the server accepted a cash sale.
+      // Reusing this receipt number makes the later replay safe and idempotent.
+      if (paymentMethod === 'CASH' && offlineReceiptId && (err instanceof TypeError || !navigator.onLine)) {
+        try {
+          await queueCashSale(offlineReceiptId);
+        } catch (queueError) {
+          console.error(queueError);
+          alert('Checkout connection failed and this tablet could not save the cash sale. Do not hand over the goods until it is online.');
+        }
+      } else {
+        alert(err.message || 'Checkout failed');
+      }
     } finally {
       setIsProcessing(false);
     }
   };
-
   const filteredProducts = products.filter(p =>
     p.title.toLowerCase().includes(search.toLowerCase()) ||
     p.category.toLowerCase().includes(search.toLowerCase())
@@ -497,8 +650,8 @@ export const PosTerminal: React.FC = () => {
           <div>
             <h1 className="text-xl font-black text-white flex items-center gap-2">
               <span>Tablet POS Terminal</span>
-              <span className="text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 px-2.5 py-0.5 rounded-full">
-                ONLINE
+              <span className={isOnline ? 'text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 px-2.5 py-0.5 rounded-full' : 'text-xs font-semibold bg-amber-950 text-amber-300 border border-amber-800 px-2.5 py-0.5 rounded-full'}>
+                {isOnline ? 'ONLINE' : 'OFFLINE — CASH ONLY'}
               </span>
             </h1>
             <p className="text-xs text-zinc-400">{cashierName} • Shared Live Stock Sync</p>
@@ -534,6 +687,20 @@ export const PosTerminal: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {!isOnline && (
+        <div role="status" className="rounded-xl border border-amber-500/70 bg-amber-950/70 p-3 text-xs font-semibold text-amber-100">
+          <strong className="text-amber-300">Offline — cash only.</strong> Cash sales are stored on this tablet and are not completed or counted until the API checks stock and price after reconnection. M-PESA is unavailable offline.
+        </div>
+      )}
+      {queuedCashSales.length > 0 && (
+        <div role="status" className="rounded-xl border border-sky-700/80 bg-sky-950/50 p-3 text-xs text-sky-100">
+          <strong>{queuedCashSales.filter(sale => sale.status === 'QUEUED').length} cash sale(s) awaiting secure sync.</strong>
+          {queuedCashSales.some(sale => sale.status === 'NEEDS_REVIEW') && (
+            <span className="ml-1 text-amber-300">{queuedCashSales.filter(sale => sale.status === 'NEEDS_REVIEW').length} need owner review before they can be recorded.</span>
+          )}
+        </div>
+      )}
 
       {statusMsg && (
         <div className="p-3 bg-rose-950/80 text-rose-200 border border-rose-800/80 rounded-xl text-xs font-semibold flex items-center gap-2">
@@ -796,11 +963,9 @@ export const PosTerminal: React.FC = () => {
 
               <button
                 onClick={() => setPaymentMethod('MPESA')}
-                className={`py-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition ${
-                  paymentMethod === 'MPESA'
-                    ? 'bg-emerald-950 border-emerald-600 text-emerald-300'
-                    : 'bg-zinc-950 border-zinc-800 text-zinc-400'
-                }`}
+                disabled={!isOnline}
+                title={isOnline ? 'M-PESA payments are verified online' : 'M-PESA is unavailable while offline'}
+                className={`py-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition ${paymentMethod === 'MPESA' ? 'bg-emerald-950 border-emerald-600 text-emerald-300' : 'bg-zinc-950 border-zinc-800 text-zinc-400'} ${!isOnline ? 'cursor-not-allowed opacity-40' : ''}`}
               >
                 <Smartphone className="w-4 h-4" />
                 <span>M-PESA</span>

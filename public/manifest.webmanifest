@@ -1,0 +1,12 @@
+{
+  "name": "Gem & Crystal POS",
+  "short_name": "Gem POS",
+  "description": "Gem & Crystal Fashion Hub cashier terminal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#e11d48",
+  "icons": [
+    { "src": "/pos-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
