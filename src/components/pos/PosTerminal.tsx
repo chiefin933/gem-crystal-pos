@@ -42,6 +42,8 @@ interface PaymentAlert {
   confirmedAt: string;
 }
 
+const POS_IDLE_LOCK_MS = 10 * 60 * 1000;
+
 export const PosTerminal: React.FC = () => {
   // Auth & Session State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -262,6 +264,39 @@ export const PosTerminal: React.FC = () => {
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+    };
+  }, [isAuthenticated, posSessionToken]);
+
+  // A payment notification is stored server-side until acknowledged, so it is
+  // safe to lock an idle terminal: the same cashier will receive it again after
+  // the next owner-approved sign-in.  The cart is cleared so one cashier cannot
+  // accidentally complete another cashier's sale.
+  useEffect(() => {
+    if (!isAuthenticated || !posSessionToken) return;
+
+    let timeoutId: number | undefined;
+    const lockForInactivity = () => {
+      void posLogout(posSessionToken).catch(() => {
+        // The server expiry still protects a terminal if the network is down.
+      });
+      setIsAuthenticated(false);
+      setPosSessionToken(null);
+      setCart([]);
+      setReceipt(null);
+      setPaymentAlerts([]);
+      setStatusMsg('POS locked after 10 minutes of inactivity. Please sign in again.');
+    };
+    const resetIdleTimer = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(lockForInactivity, POS_IDLE_LOCK_MS);
+    };
+    const activityEvents: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'touchstart'];
+    activityEvents.forEach(eventName => window.addEventListener(eventName, resetIdleTimer));
+    resetIdleTimer();
+
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      activityEvents.forEach(eventName => window.removeEventListener(eventName, resetIdleTimer));
     };
   }, [isAuthenticated, posSessionToken]);
 
