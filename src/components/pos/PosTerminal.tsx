@@ -42,7 +42,7 @@ interface PaymentAlert {
   confirmedAt: string;
 }
 
-const POS_IDLE_LOCK_MS = 10 * 60 * 1000;
+const POS_IDLE_LOCK_MS = 15 * 60 * 1000;
 
 export const PosTerminal: React.FC = () => {
   // Auth & Session State
@@ -284,7 +284,7 @@ export const PosTerminal: React.FC = () => {
       setCart([]);
       setReceipt(null);
       setPaymentAlerts([]);
-      setStatusMsg('POS locked after 10 minutes of inactivity. Please sign in again.');
+      setStatusMsg('POS locked after 15 minutes of inactivity. Please sign in again.');
     };
     const resetIdleTimer = () => {
       if (timeoutId) window.clearTimeout(timeoutId);
