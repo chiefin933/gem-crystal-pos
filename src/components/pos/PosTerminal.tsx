@@ -88,6 +88,8 @@ export const PosTerminal: React.FC = () => {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [queuedCashSales, setQueuedCashSales] = useState<OfflineCashSale[]>([]);
   const syncInProgress = useRef(false);
+  // Kept until checkout succeeds so a lost response is replayed safely.
+  const checkoutIdempotencyKeyRef = useRef<string | null>(null);
 
   // Hardware Scanner Buffer State
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
@@ -130,6 +132,7 @@ export const PosTerminal: React.FC = () => {
         cashReceived: sale.cashReceived,
         offlineReceiptId: sale.receiptNumber,
         offlineExpectedTotal: sale.expectedTotal,
+        idempotencyKey: sale.receiptNumber,
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -475,6 +478,7 @@ export const PosTerminal: React.FC = () => {
 
 
   const resetCheckoutForm = () => {
+    checkoutIdempotencyKeyRef.current = null;
     setCart([]);
     setCashReceived('');
     setCustomerNameInput('Walk-in Customer');
@@ -523,6 +527,8 @@ export const PosTerminal: React.FC = () => {
     }
 
     setIsProcessing(true);
+    const idempotencyKey = checkoutIdempotencyKeyRef.current ?? crypto.randomUUID();
+    checkoutIdempotencyKeyRef.current = idempotencyKey;
     try {
       const res = await fetch(`${API_BASE}/pos/checkout`, {
         method: 'POST',
@@ -539,6 +545,7 @@ export const PosTerminal: React.FC = () => {
           cashReceived: paymentMethod === 'CASH' ? numCashReceived : null,
           offlineReceiptId,
           offlineExpectedTotal: paymentMethod === 'CASH' ? cartTotal : undefined,
+          idempotencyKey,
         }),
       });
 
@@ -550,7 +557,7 @@ export const PosTerminal: React.FC = () => {
       }
       resetCheckoutForm();
       if (paymentMethod === 'MPESA') {
-        setStatusMsg(`Sale #${data.receiptNumber} pending. Ask customer to pay exactly KES ${Math.round(data.sale?.total ?? 0).toLocaleString()} to the Till using Buy Goods; no reference number is needed. A payment confirmation will appear here when Safaricom notifies us.`);
+        setStatusMsg(`Sale #${data.receiptNumber} pending. Ask customer to pay exactly KES ${Math.round(data.sale?.total ?? 0).toLocaleString()} to the Till using Buy Goods; no reference number is needed. Ask the owner to verify the incoming payment in Unmatched Payments and assign it to this sale reference. The confirmation will then appear here.`);
       }
       await loadCatalog();
     } catch (err: any) {
@@ -1016,7 +1023,7 @@ export const PosTerminal: React.FC = () => {
                   )}
                   <p className="text-emerald-400">Amount: <span className="font-mono font-bold">KES {cartTotal.toLocaleString()}</span></p>
                   <p className="text-zinc-400 text-[10px]">
-                    The customer enters the Till number and exact amount only; Buy Goods has no reference field. The cashier will then verify the Safaricom payer name before completing the sale.
+                    The customer enters the Till number and exact amount only; Buy Goods has no reference field. The owner must verify and link the incoming payment to this sale in Unmatched Payments. Then verify the payer name before completing the sale.
                     If two pending sales have the same amount, the payment is held for safe owner review instead of being assigned to the wrong sale.
                   </p>
                 </div>

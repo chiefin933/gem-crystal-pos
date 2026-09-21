@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+export const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '') || '/api';
 
 function getAuthHeader(): Record<string, string> {
   const token = localStorage.getItem('gc_admin_token');
@@ -192,22 +192,21 @@ export async function deleteCoupon(code: string) {
  * Called by the POS AFTER it has successfully displayed/processed a payment
  * notification. Only at this point does the backend mark the notification
  * acknowledged so that it won't be re-delivered on the next poll.
- * The call is fire-and-forget from the UI; a failure is safe because the
- * backend will simply re-deliver the notification on the next poll cycle.
+ * HTTP failures are surfaced so the cashier retains the alert and can retry.
+ * The backend also re-delivers unacknowledged notifications after reconnect.
  */
 export async function acknowledgePaymentNotification(
   notificationId: string,
   posSessionToken: string,
 ): Promise<void> {
-  await fetch(`${API_BASE}/pos/payment-notifications/${encodeURIComponent(notificationId)}/acknowledge`, {
+  const response = await fetch(`${API_BASE}/pos/payment-notifications/${encodeURIComponent(notificationId)}/acknowledge`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${posSessionToken}`,
     },
   });
-  // We intentionally do not throw on failure — if the network is down the
-  // backend will re-deliver on the next poll and the cashier will dismiss again.
+  if (!response.ok) throw new Error('Sale completed, but payment acknowledgement failed. Retry to finish.');
 }
 
 /**
@@ -225,4 +224,24 @@ export async function posLogout(posSessionToken: string): Promise<void> {
   });
   // Non-throwing: local cleanup in the caller's finally block handles the
   // UI state regardless of whether the network request succeeds.
+}
+
+/**
+ * Completes a POS sale after M-PESA payment is confirmed.
+ * Deducts stock atomically and marks saleStatus=COMPLETED.
+ * Returns { success, sale } from the backend.
+ */
+export async function completePOSSale(saleId: string, posSessionToken: string): Promise<{ success: boolean; sale: any }> {
+  const res = await fetch(`${API_BASE}/pos/sales/${encodeURIComponent(saleId)}/complete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${posSessionToken}`,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: { message: 'Failed to complete sale' } }));
+    throw new Error(err.error?.message || 'Failed to complete sale');
+  }
+  return res.json();
 }
