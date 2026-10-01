@@ -22,6 +22,22 @@ describe('POS API client', () => {
     });
   });
 
+  it('normalizes PostgreSQL decimal strings before caching or arithmetic', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse([{
+      id: 'product-1', price: '20.00', salePrice: null, variants: [{
+        id: 'variant-1', sku: 'SKU-1', size: 'M', color: 'Black',
+        price: '20', salePrice: '19.50', stockQuantity: 2,
+      }],
+    }]));
+
+    await expect(fetchProducts()).resolves.toEqual([{
+      id: 'product-1', price: 20, salePrice: null, variants: [{
+        id: 'variant-1', sku: 'SKU-1', size: 'M', color: 'Black',
+        price: 20, salePrice: 19.5, stockQuantity: 2,
+      }],
+    }]);
+  });
+
   it('encodes identifiers and sends only the short-lived POS session token', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse({ success: true, sale: { id: 'sale/1' } }))
