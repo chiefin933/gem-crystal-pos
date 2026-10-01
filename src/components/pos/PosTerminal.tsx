@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchProducts } from '../../api/adminApi';
-import { acknowledgePaymentNotification, posLogout, completePOSSale, API_BASE } from '../../api/adminApi';
+import {
+  acknowledgePaymentNotification, API_BASE, completePOSSale, fetchProducts, posLogout,
+} from '../../api/posApi';
 import {
   createOfflineReceiptNumber,
   listOfflineCashSales,
